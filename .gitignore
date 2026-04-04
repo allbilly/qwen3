@@ -1,2 +1,4 @@
-reference/
-tokenizer.json
+reference/*
+model/*
+model
+*.json
