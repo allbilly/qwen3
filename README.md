@@ -1241,4 +1241,188 @@ What is the Ultimate Answer to Life, the Universe, and Everything?
  And why is it so important? What is the significance of the answer? What is the role of the answer in the universe? What is the significance% 
 ```
 
-Lets check what hugging face transformer lib generate for the same prompt
+Lets check what hugging face transformer lib generate for the same prompt in bash python
+```python
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch
+
+model_name = "./model" # Use Instruct version for chat
+model = AutoModelForCausalLM.from_pretrained(model_name)
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+prompt = 'What is the Ultimate Answer to Life, the Universe, and Everything?'
+messages = [{"role": "user", "content": prompt}]
+text = tokenizer.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
+inputs = tokenizer([text], return_tensors="pt").to(model.device)
+
+generated_ids = model.generate(**inputs, max_new_tokens=30)
+print(tokenizer.batch_decode(generated_ids[:, inputs.input_ids.shape[1]:], skip_special_tokens=True)[0])
+```
+
+```
+<think>
+Okay, the user is asking for the Ultimate Answer to Life, the Universe, and Everything. Hmm, I know that this is a philosophical
+```
+
+Oh that different from our output, because we are not using the proper chat template
+
+```python
+prompt = "What is the Ultimate Answer to Life, the Universe, and Everything?"
+prompt = f"<|im_start|>user\n{prompt}<|im_end|>\n"
+prompt = prompt + "<|im_start|>assistant" + "\n"
+```
+
+```python
+tensor([[   27,    91,   318,  4906,    91,    29,   872,   198,  3838,   374,
+           279, 28850, 21806,   311,  9414,    11,   279, 28749,    11,   323,
+         20094, 75414,    91,   318,  6213,    91,   397,    27,    91,   318,
+          4906,    91,    29, 77091,   198]])
+<|im_start|>user
+What is the Ultimate Answer to Life, the Universe, and Everything?<|im_end|>
+<|im_start|>assistant
+
+assistant: I'm sorry, but I can't provide information about the Ultimate Answer to Life, the Universe, and Everything. This is a fictional concept%      
+```
+
+comapre the tokens id to huggingface encoding again? 
+
+```python
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch
+
+model_name = "./model" # Use Instruct version for chat
+model = AutoModelForCausalLM.from_pretrained(model_name)
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+prompt = 'What is the Ultimate Answer to Life, the Universe, and Everything?'
+messages = [{"role": "user", "content": prompt}]
+text = tokenizer.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
+inputs = tokenizer([text], return_tensors="pt").to(model.device)
+print("text:", text)
+print("inputs:", inputs)
+```
+
+```python
+inputs: {'input_ids': tensor([[151644,    872,    198,   3838,    374,    279,  28850,  21806,    311,
+           9414,     11,    279,  28749,     11,    323,  20094,     30, 151645,
+            198, 151644,  77091,    198]]), 'attention_mask': tensor([[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]])}
+```
+
+We saw first few tokens are differ but last few are the same, thats because our Tokenizer did not include special token
+lets 
+- add _special_to_id to init
+- rename our encode function to _bpe_encode
+- write new encode function to for loop each part to decide special token or bpe token
+- decode function support id_to_special
+
+```python
+class Qwen3Tokenizer:
+    _SPLIT_RE = re.compile(r"(<\|[^>]+?\|>)")
+    def __init__(self, tokenizer_json_path):
+        ...
+        self._special_to_id = {}
+        for token in data["added_tokens"]:
+            self._special_to_id[token["content"]] = token["id"]
+        self.pad_token_id = self.vocab.get("<|endoftext|>", 0)
+        self.eos_token_id = self.pad_token_id
+
+    def encode(self, prompt):
+        parts = self._SPLIT_RE.split(prompt)
+        token_ids = []
+        for part in parts:
+            if not part:
+                continue
+            if part in self._special_to_id:
+                token_ids.append(self._special_to_id[part])
+            else:
+                token_ids.extend(self._bpe_encode(part))
+        return token_ids
+
+    def decode(self, token_ids):
+        id_to_vocab = {v: k for k, v in self.vocab.items()}
+        id_to_special = {v: k for k, v in self._special_to_id.items()}
+        
+        res = []
+        for token_id in token_ids.squeeze(0).tolist():
+            token = id_to_vocab.get(token_id, id_to_special.get(token_id))
+            res.append(token)
+        return res
+```
+
+
+```python
+tensor([[151644,    872,    198,   3838,    374,    279,  28850,  21806,    311,
+           9414,     11,    279,  28749,     11,    323,  20094,     30, 151645,
+            198, 151644,  77091,    198]])
+<|im_start|>user
+What is the Ultimate Answer to Life, the Universe, and Everything?<|im_end|>
+<|im_start|>assistant
+
+<think>ĊOkay, the user is asking for the Ultimate Answer to Life, the Universe, and Everything. Hmm, I know this is a common question, but I need to be careful here. The user might be referring to the concept of a "%      
+```
+
+Thats looking amazing. We have similar ouput to huggingface transofmer libary in previous test
+```
+Huggingface Transformer
+<think>
+Okay, the user is asking for the Ultimate Answer to Life, the Universe, and Everything. Hmm, I know that this is a philosophical
+```
+
+All right, before going on to dig into full parity, lets handle unicode decode first
+
+```python
+class Qwen3Tokenizer:
+    def decode(self, token_ids):
+        id_to_vocab = {v: k for k, v in self.vocab.items()}
+        id_to_special = {v: k for k, v in self._special_to_id.items()}
+        
+        res = []
+        for token_id in token_ids.squeeze(0).tolist():
+            if token_id in id_to_special:
+                token = id_to_special.get(token_id)
+            else:
+                token = id_to_vocab.get(token_id, "[Not found]")
+                decoded_token = []
+                for char in token:
+                    if char in BYTE_DECODER:
+                        char = chr(BYTE_DECODER[char])
+                    decoded_token.append(char)
+                token = "".join(decoded_token)
+            res.append(token)
+        return res
+```
+
+We added a little for loop to convert Ċ -> BYTE_DECODER[char] -> 10 -> chr(10) -> "\n" 
+```
+<think>
+Okay, the user is asking for the Ultimate Answer to Life, the Universe, and Everything. Hmm, I know this is a common question, but I need to be careful here. The user might be referring to the concept of a "%    
+```
+
+Now we get our beauiful formatted English sentence! Great!
+Next lets check why the output is slight is different to hugging face one
+Honestly I stumpled in this step and asked chatgpt 5.4
+It turns out RMSnorm is very sensitive to numerical precision and suggest to add 
+x = x.to(torch.float32) in RMSnorm forward
+
+```python
+class RMSNorm(nn.Module):
+   def forward(self, x):
+        input_dtype = x.dtype
+        x = x.to(torch.float32)
+        variance = x.pow(2).mean(dim=-1, keepdim=True)
+```
+
+and ask chatgpt 5.4 to test it again and we got
+```
+Results:
+- float32 parity:
+  - max diff 0.0
+  - mean diff 0.0
+  - next token match True
+- bfloat16 parity:
+  - max diff 0.0
+  - mean diff 0.0
+  - next token match True
+```
+
+Great, thats all of part1, in part2 we will rewrite everything we have in C to prepare to fight the CUDA boss.

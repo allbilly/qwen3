@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import json
 from safetensors.torch import load_file 
+import re
 
 def bytes_to_unicode():
     """Map each byte to its unicode representation in BPE vocab"""
@@ -155,6 +156,9 @@ def apply_rope(x, cos, sin):
     return x_rotated.to(dtype=x.dtype)
 
 class Qwen3Tokenizer:
+    _SPLIT_RE = re.compile(r"(<\|[^>]+?\|>)")
+    # _SPLIT_RE = re.compile(r"(<\|[^>]+?\|>|</think>)")
+                           
     def __init__(self, tokenizer_json_path):
         with open(tokenizer_json_path, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -165,7 +169,13 @@ class Qwen3Tokenizer:
             token_a, token_b = merge[0], merge[1]
             self.merge_rules[(token_a, token_b)] = i
         
-    def encode(self, prompt):
+        self._special_to_id = {}
+        for token in data["added_tokens"]:
+            self._special_to_id[token["content"]] = token["id"]
+        self.pad_token_id = self.vocab.get("<|endoftext|>", 0)
+        self.eos_token_id = self.pad_token_id
+
+    def _bpe_encode(self, prompt):
         # Step 1: Split into characters (initial tokens)
         tokens = list(prompt)
         tokens = [BYTE_ENCODER[b] for b in prompt.encode("utf-8")]
@@ -206,13 +216,34 @@ class Qwen3Tokenizer:
                     token_ids.append(self.vocab.get(char, 0))
         return token_ids
 
+    def encode(self, prompt):
+        parts = self._SPLIT_RE.split(prompt)
+        token_ids = []
+        for part in parts:
+            if not part:
+                continue
+            if part in self._special_to_id:
+                token_ids.append(self._special_to_id[part])
+            else:
+                token_ids.extend(self._bpe_encode(part))
+        return token_ids
+
     def decode(self, token_ids):
-        # Step 1: Reverse lookup - token_id -> token string
         id_to_vocab = {v: k for k, v in self.vocab.items()}
+        id_to_special = {v: k for k, v in self._special_to_id.items()}
         
         res = []
         for token_id in token_ids.squeeze(0).tolist():
-            token = id_to_vocab.get(token_id, "None found")
+            if token_id in id_to_special:
+                token = id_to_special.get(token_id)
+            else:
+                token = id_to_vocab.get(token_id, "[Not found]")
+                decoded_token = []
+                for char in token:
+                    if char in BYTE_DECODER:
+                        char = chr(BYTE_DECODER[char])
+                    decoded_token.append(char)
+                token = "".join(decoded_token)
             res.append(token)
         return res
 
@@ -298,6 +329,7 @@ class RMSNorm(nn.Module):
 
     def forward(self, x):
         input_dtype = x.dtype
+        x = x.to(torch.float32)
         variance = x.pow(2).mean(dim=-1, keepdim=True)
         norm_x = x * torch.rsqrt(variance + self.eps)
         norm_x = norm_x * self.scale
@@ -401,9 +433,12 @@ weights_file = hf_folder + "model.safetensors"
 tokenizer = Qwen3Tokenizer(hf_folder + "tokenizer.json")
 
 prompt = "What is the Ultimate Answer to Life, the Universe, and Everything?"
+prompt = f"<|im_start|>user\n{prompt}<|im_end|>\n"
+prompt = prompt + "<|im_start|>assistant" + "\n"
+
 input_token_ids = tokenizer.encode(prompt)
 input_token_ids_tensor = torch.tensor(input_token_ids).unsqueeze(0)
-# print(input_token_ids_tensor.shape)
+print(input_token_ids_tensor)
 
 model = Qwen3Model(QWEN3_CONFIG)
 
@@ -411,9 +446,10 @@ weights_dict = load_file(weights_file)
 load_weights_into_qwen(model, QWEN3_CONFIG, weights_dict)
 
 print(prompt)
-for i in range(30):
+for i in range(1000):
     out = model(input_token_ids_tensor)[:, -1]
     next_token = torch.argmax(out, dim=-1, keepdim=True)
-    res = tokenizer.decode(next_token)[0].replace("Ġ", " ")
-    print(res, end="")
+    res = tokenizer.decode(next_token)[0]
+    print(res, end="", flush=True)
     input_token_ids_tensor = torch.cat([input_token_ids_tensor, next_token], dim=1)
+
