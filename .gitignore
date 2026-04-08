@@ -2,3 +2,4 @@ reference/*
 model/*
 model
 *.json
+.DS_Store

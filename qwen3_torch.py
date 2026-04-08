@@ -225,6 +225,12 @@ class GroupedQueryAttention(nn.Module):
         self.W_value = nn.Linear(d_in, num_kv_groups * head_dim, bias=False, dtype=dtype)
         self.out_proj = nn.Linear(self.d_out, d_in, bias=False, dtype=dtype)
 
+        if qk_norm:
+            self.q_norm = RMSNorm(head_dim, eps=1e-6)
+            self.k_norm = RMSNorm(head_dim, eps=1e-6)
+        else:
+            self.q_norm = self.k_norm = None
+
     def forward(self, x, mask, cos, sin):
         b, num_tokens, _ = x.shape
 
@@ -237,6 +243,12 @@ class GroupedQueryAttention(nn.Module):
         queries = queries.view(b, num_tokens, self.num_heads, self.head_dim).transpose(1, 2)
         keys = keys.view(b, num_tokens, self.num_kv_groups, self.head_dim).transpose(1, 2)
         values = values.view(b, num_tokens, self.num_kv_groups, self.head_dim).transpose(1, 2)
+
+        # Optional normalization
+        if self.q_norm:
+            queries = self.q_norm(queries)
+        if self.k_norm:
+            keys = self.k_norm(keys)
 
         # Apply RoPE
         queries = apply_rope(queries, cos, sin)
@@ -374,7 +386,9 @@ class Qwen3Model(nn.Module):
         logits = self.out_head(x.to(self.cfg["dtype"]))
         return logits
 
-tokenizer = Qwen3Tokenizer("./tokenizer.json")
+hf_folder = "./model/"
+weights_file = hf_folder + "model.safetensors"
+tokenizer = Qwen3Tokenizer(hf_folder + "tokenizer.json")
 
 prompt = "What is the Ultimate Answer to Life, the Universe, and Everything?"
 input_token_ids = tokenizer.encode(prompt)
@@ -383,9 +397,6 @@ print(input_token_ids_tensor.shape)
 
 model = Qwen3Model(QWEN3_CONFIG)
 
-hf_folder = "./model/"
-weights_file = hf_folder + "model.safetensors"
 weights_dict = load_file(weights_file)
 load_weights_into_qwen(model, QWEN3_CONFIG, weights_dict)
-
 out = model(input_token_ids_tensor)

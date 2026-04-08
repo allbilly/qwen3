@@ -1,6 +1,16 @@
 # Qwen3: from zero to megakernel 
 
-This is a blog series to implement Qwen3 0.6B inference engine from zero to megakernel and to document my learning progress. 
+This is a blog series to implement Qwen3 0.6B inference engine from zero to ![megakernel](https://github.com/Infatoshi/grokking-megakernels) and to document my learning progress. 
+
+We will be reimplementing
+- https://github.com/rasbt/LLMs-from-scratch/tree/main/ch05/11_qwen3
+- https://github.com/adriancable/qwen3.c
+- https://github.com/andrewkchan/yalm (for CUDA)
+- https://github.com/zeux/calm (for Metal)
+- https://github.com/Infatoshi/grokking-megakernels
+
+I also like to use mega kerenl to accerlate inference rollout for 
+- https://github.com/YuvrajSingh-mist/smolcluster
 
 So how does qwen3 architecture look like. 
 Here is the  Qwen3 architecture diagram by Sebastian Raschka.
@@ -997,5 +1007,33 @@ we forgot QK Norm in GQA before, it was shown in the diagram and we forgot to ha
 it is the last puzzle before we can do the text generation loop
 
 ```python
+class GroupedQueryAttention(nn.Module):
+    def __init__(
+        self, d_in, num_heads, num_kv_groups, head_dim=None, qk_norm=False, dtype=None
+    ):
+        ...
+        if qk_norm:
+            self.q_norm = RMSNorm(head_dim, eps=1e-6)
+            self.k_norm = RMSNorm(head_dim, eps=1e-6)
+        else:
+            self.q_norm = self.k_norm = None
+        ...
+        
+    def forward(self, x, mask, cos, sin):
+        ...
+        # Optional normalization
+        if self.q_norm:
+            queries = self.q_norm(queries)
+        if self.k_norm:
+            keys = self.k_norm(keys)
+
+        # Apply RoPE
+        queries = apply_rope(queries, cos, sin)
+        keys = apply_rope(keys, cos, sin)
+        ...
 ```
 
+Great we have everything we need and we can generate our first token
+```
+
+```
