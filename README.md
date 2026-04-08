@@ -1034,6 +1034,211 @@ class GroupedQueryAttention(nn.Module):
 ```
 
 Great we have everything we need and we can generate our first token
+```python
+out = model(input_token_ids_tensor)
+print(out)
+print(out.shape)
+```
+
+ok we get 
+```python
+tensor([[[ 5.2188,  4.6250,  2.3906,  ..., -0.4277, -0.4277, -0.4277],
+         [-1.0000,  3.1562, -1.6641,  ..., -2.7188, -2.7188, -2.7188],
+         [-4.4688, -0.5586, -5.4688,  ..., -4.0312, -4.0312, -4.0312],
+         ...,
+         [ 1.2812,  7.0312,  1.9531,  ..., -0.9609, -0.9609, -0.9609],
+         [11.0000,  8.2500,  5.8125,  ..., -3.0625, -3.0625, -3.0625],
+         [ 7.3750,  4.1250,  3.7812,  ..., -1.9219, -1.9219, -1.9219]]],
+       dtype=torch.bfloat16, grad_fn=<UnsafeViewBackward0>)
+torch.Size([1, 14, 151936])
+```
+
+It gave use the logits for each vocab for each token in the prompt, in trasformer it compute the logits for each token to do next token prediction.
+But not we only interested in the logits of the last token, so last take the last logits out 
+
+
+```python
+out = model(input_token_ids_tensor)[:, -1]
+print(out)
+print(out.shape)
+```
+
+```python
+tensor([[ 7.3750,  4.1250,  3.7812,  ..., -1.9219, -1.9219, -1.9219]],
+       dtype=torch.bfloat16, grad_fn=<SelectBackward0>)
+torch.Size([1, 151936])
+```
+
+To keep thing simple, we will do greedy sampling, that is the logits actually give a prob of each token to be next for each vocab
+and we take the highest prob one.
+
+```python
+next_token = torch.max(out, dim=-1, keepdim=True)
+res = tokenizer.decode(next_token)
+print(next_token)
+print(res)
+```
+
+```python
+AttributeError: 'Qwen3Tokenizer' object has no attribute 'decode'
+```
+
+oh we need to implement decode function first, lets go back to the Qwen3Tokenizer
+```python
+class Qwen3Tokenizer:
+   def decode(self, token_ids):
+        # Step 1: Reverse lookup - token_id -> token string
+        id_to_vocab = {v: k for k, v in self.vocab.items()}
+        token = id_to_vocab.get(token_ids)
+        print(token_ids)
+        print(token)
+        return token
+```
+
+```python
+torch.return_types.max(
+values=tensor([[16.]], dtype=torch.bfloat16, grad_fn=<MaxBackward0>),
+indices=tensor([[1597]]))
+None
+```
+
+and we got None, whys that, lets try
+```python
+token = id_to_vocab.get(token_ids, "None found")
 ```
 
 ```
+torch.return_types.max(
+values=tensor([[16.]], dtype=torch.bfloat16, grad_fn=<MaxBackward0>),
+indices=tensor([[1597]]))
+ None found
+```
+
+16 should be a valid index to the id_to_vocab dict, lets print that
+```
+print(id_to_vocab.get(16, "None found"))
+```
+
+```python
+1
+```
+
+That should be a string 1, but why we hv None found previously? 
+Thats because we passed in a pytorch tensor instead of integer idx to id_to_vocab
+
+```python
+token_ids = token_ids.squeeze(0)
+print(token_ids)
+token = id_to_vocab.get(token_ids, "None found")
+print(token)
+```
+
+```
+AttributeError: 'torch.return_types.max' object has no attribute 'squeeze'
+```
+
+some error related to return_typres.max and if we look closer to the next_token,
+its values it 16. not a integer for token idx we need
+and thats because we were using torch.max to find the maximun prob in the logits
+but we already chose to use the token with max prob, we need its index instead of its prob value
+in pytorch we can do argmax to return the idx of maxmum value
+
+```python
+next_token = torch.argmax(out, dim=-1, keepdim=True)
+res = tokenizer.decode(next_token)
+print(next_token)
+print(res)
+```
+
+```python
+tensor([1597])
+None found
+```
+
+now we have index 1597 but still none found was shown
+lets check what is 1597
+```python
+print(id_to_vocab.get(1597, "None found"))
+```
+```
+ĠAnd
+```
+
+Ġ is our byte encoded space before and "And" makes more sense to stinrg "1" 
+and look again we have tensor([1597]) of tensor type instead of integer we want
+
+```python
+token_ids = token_ids.squeeze(0).tolist()#[0]
+print(token_ids)
+token = id_to_vocab.get(token_ids, "None found")
+print(token)
+```
+
+```python
+TypeError: unhashable type: 'list'
+```
+
+wrap it with for loop
+```python
+class Qwen3Tokenizer:
+    def decode(self, token_ids):
+        # Step 1: Reverse lookup - token_id -> token string
+        id_to_vocab = {v: k for k, v in self.vocab.items()}
+        
+        res = []
+        for token_id in token_ids.squeeze(0).tolist():
+            print(token_id)
+            token = id_to_vocab.get(token_id, "None found")
+            print(token)
+            res.append(token)
+        return res
+```
+
+```
+1597
+ĠAnd
+```
+
+No more error and we have our tokens, lets generation some more
+and concat our latest generated token back to the input_token_ids_tensor
+```python
+for i in range(10):
+    out = model(input_token_ids_tensor)[:, -1]
+    next_token = torch.argmax(out, dim=-1, keepdim=True)
+    res = tokenizer.decode(next_token)
+    input_token_ids_tensor = torch.cat([input_token_ids_tensor, next_token], dim=1)
+
+```
+
+```
+['ĠAnd']
+['Ġwhy']
+['Ġis']
+['Ġit']
+['Ġso']
+['Ġimportant']
+['?']
+['ĠWhat']
+['Ġis']
+['Ġthe']
+```
+Bravo, its look like a english sentence, lets replcae Ġ with space character 
+and print tokens in the same line 
+
+```python
+print(prompt)
+for i in range(30):
+    out = model(input_token_ids_tensor)[:, -1]
+    next_token = torch.argmax(out, dim=-1, keepdim=True)
+    res = tokenizer.decode(next_token)[0].replace("Ġ", " ")
+    print(res, end="")
+    input_token_ids_tensor = torch.cat([input_token_ids_tensor, next_token], dim=1)
+
+```
+
+```
+What is the Ultimate Answer to Life, the Universe, and Everything?
+ And why is it so important? What is the significance of the answer? What is the role of the answer in the universe? What is the significance% 
+```
+
+Lets check what hugging face transformer lib generate for the same prompt

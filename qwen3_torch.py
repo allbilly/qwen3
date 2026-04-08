@@ -17,7 +17,7 @@ def bytes_to_unicode():
             n += 1
     return dict(zip(bs, [chr(c) for c in cs]))
 BYTE_ENCODER = bytes_to_unicode()
-
+BYTE_DECODER = {v: k for k, v in BYTE_ENCODER.items()}
 
 def load_weights_into_qwen(model, param_config, params):
     def assign(left, right, tensor_name="unknown"):
@@ -206,6 +206,16 @@ class Qwen3Tokenizer:
                     token_ids.append(self.vocab.get(char, 0))
         return token_ids
 
+    def decode(self, token_ids):
+        # Step 1: Reverse lookup - token_id -> token string
+        id_to_vocab = {v: k for k, v in self.vocab.items()}
+        
+        res = []
+        for token_id in token_ids.squeeze(0).tolist():
+            token = id_to_vocab.get(token_id, "None found")
+            res.append(token)
+        return res
+
 class GroupedQueryAttention(nn.Module):
     def __init__(
         self, d_in, num_heads, num_kv_groups, head_dim=None, qk_norm=False, dtype=None
@@ -393,10 +403,17 @@ tokenizer = Qwen3Tokenizer(hf_folder + "tokenizer.json")
 prompt = "What is the Ultimate Answer to Life, the Universe, and Everything?"
 input_token_ids = tokenizer.encode(prompt)
 input_token_ids_tensor = torch.tensor(input_token_ids).unsqueeze(0)
-print(input_token_ids_tensor.shape)
+# print(input_token_ids_tensor.shape)
 
 model = Qwen3Model(QWEN3_CONFIG)
 
 weights_dict = load_file(weights_file)
 load_weights_into_qwen(model, QWEN3_CONFIG, weights_dict)
-out = model(input_token_ids_tensor)
+
+print(prompt)
+for i in range(30):
+    out = model(input_token_ids_tensor)[:, -1]
+    next_token = torch.argmax(out, dim=-1, keepdim=True)
+    res = tokenizer.decode(next_token)[0].replace("Ġ", " ")
+    print(res, end="")
+    input_token_ids_tensor = torch.cat([input_token_ids_tensor, next_token], dim=1)
