@@ -1,6 +1,6 @@
 # Qwen3: from zero to megakernel 
 
-This is a blog series to implement Qwen3 0.6B inference engine from zero to [megakernel](https://github.com/Infatoshi/grokking-megakernels) and to document my learning progress. 
+This is a blog series to implement Qwen3 0.6B inference engine from zero to [Qwen3 megakernel](https://github.com/Infatoshi/grokking-megakernels) [Qwen3.5 megakernel](https://github.com/Luce-Org/luce-megakernel) and to document my learning progress. 
 
 We will be reimplementing
 - https://github.com/rasbt/LLMs-from-scratch/tree/main/ch05/11_qwen3
