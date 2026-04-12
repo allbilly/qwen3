@@ -3,3 +3,6 @@ model/*
 model
 *.json
 .DS_Store
+*.bin*
+qwen3
+qwen3_ref
