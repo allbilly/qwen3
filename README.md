@@ -1,3 +1,5 @@
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/allbilly/qwen3)
+
 # Qwen3: from zero to megakernel 
 
 This is a blog series to implement Qwen3 0.6B inference engine from zero to [Qwen3 megakernel](https://github.com/Infatoshi/grokking-megakernels) [Qwen3.5 megakernel](https://github.com/Luce-Org/luce-megakernel) and to document my learning progress. 
