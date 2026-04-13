@@ -18,3 +18,10 @@ I also like to use mega kerenl to accerlate inference rollout for
 # Table of Index
 - [PART1 qwen3_torch.py](./1_qwen3_torch.md)
 - [PART2 qwen3.c](./2_qwen3_c.md)
+
+# How to compile
+refernce code from https://github.com/adriancable/qwen3.c
+- gcc -o qwen3_ref qwen3_ref.c -lm -O2 && ./qwen3_ref Qwen3-0.6B.bin -i "Hello world"
+
+Our qwen3.c
+- gcc qwen3.c -o qwen3 && ./qwen3

@@ -65,3 +65,13 @@ void encode(){
         }
 }
 ```
+
+
+As said by big pickle, Safetensors is basically PyTorch tensor serialization — extremely complex to parse in C. You'd need to:
+- Parse safetensors header (JSON metadata)
+- Understand PyTorch tensor format
+- Handle bf16/fp16/bfp16 quantization
+- Implement the full serialization spec
+This defeats the entire purpose of using C (simplicity).
+
+therefor, we would need a export script to convert .safetensor model weight to .bin
