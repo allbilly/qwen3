@@ -27,8 +27,6 @@ typedef struct {
     unsigned int max_token_length;
     unsigned int bos_token_id;
     unsigned int eos_token_id;
-    char prompt_template[1024];
-    char system_prompt_template[1024];
 } Tokenizer;
 
 int str_lookup(char *str, char **vocab, int vocab_size) {
@@ -60,7 +58,7 @@ void encode(Tokenizer *t, char *text){
                 printf("special: %s", special_token);
 
                 // 3. token to id
-                // we need tokenizer struct to provide us t->vocab and t->vocab_size
+                // we need tokenizer to provide us t->vocab and t->vocab_size
                 id = str_lookup(special_token, t->vocab, t->vocab_size);
                 printf("%d\n", id);
 
@@ -70,7 +68,8 @@ void encode(Tokenizer *t, char *text){
     }
 }
 
-void read_checkpoint(char *checkpoint, Config *config) {
+void build_config(Config *config, char *checkpoint) {
+    1. 
     FILE *file = fopen(checkpoint, "rb");
     if (!file) { fprintf(stderr, "Couldn't open checkpoint %s\n", checkpoint); exit(EXIT_FAILURE); }
 
@@ -88,10 +87,6 @@ void read_checkpoint(char *checkpoint, Config *config) {
     if (config->version != 1) { fprintf(stderr, "Checkpoint %s is version %d, need version 1\n", checkpoint, config->version); exit(EXIT_FAILURE); }
 
     GS = config->group_size; // set as global, as it will be used in many places
-}
-
-void build_config(Config *c, char *checkpoint_path) {
-    read_checkpoint(checkpoint_path, c);
 }
 
 void build_tokenizer(Tokenizer *t, char *checkpoint_path, int vocab_size) {
